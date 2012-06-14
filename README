@@ -1,0 +1,22 @@
+An x86/64-optimized rank/select library
+=================
+
+Overview
+-----------
+This code is orignated from Okanohara's implimentation below:
+
+http://codezine.jp/article/detail/260
+
+Some techniques to harness x86/64 platforms are put into the code.
+* Aligned pre-computed values with cache-lines
+* Striped bit-vectors with these values
+* Branch-free processing with SIMD instructions
+
+Prequisites
+-----------
+google-glog
+
+History
+-----------
+2011-12-20 version 0.1.0
+
