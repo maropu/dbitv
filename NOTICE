@@ -6,4 +6,15 @@ How to use
 
 Performance
 -----------
+CPU: Intel Core-i5@1.33GHz
+
+$ ./run_query -b 134217728 -l 10000000
+--rank
+ Total Time: 0.023686
+ Throughputs(query/sec): 4.22189e+08
+ Unit Speed(sec/query): 2.3686e-09
+--select
+ Total Time: 4.92888
+ Throughputs(query/sec): 2.02886e+06
+ Unit Speed(sec/query): 4.92888e-07
 

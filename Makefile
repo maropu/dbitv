@@ -1,7 +1,6 @@
 CC		= g++
-RM		= rm
 CFLAGS		+= -D__USE_SSE_POPCNT__ -O2 -std=gnu++0x -fomit-frame-pointer -fstrict-aliasing -march=nocona
-WFLAGS		=
+WFLAGS		= -Wall
 LDFLAGS		= -L/usr/local/lib
 INCLUDE		= -I./include
 LIBS		= -msse2 -lglog
@@ -45,5 +44,5 @@ gtest_main.a:	gtest-all.o gtest_main.o
 		
 .PHONY:clean
 clean:
-		$(RM) -f *.log *.o *.a $(OBJS) $(OBJS_UTEST) $(BENCHMARK) $(SBV_UTEST)
+		rm -f *.log *.o *.a $(OBJS) $(OBJS_UTEST) $(BENCHMARK) $(SBV_UTEST)
 
