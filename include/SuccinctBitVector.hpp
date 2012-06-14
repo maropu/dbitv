@@ -93,7 +93,7 @@ selectPos8(uint32_t d, int r) {
 
         if (d == 0 && r == 0) return 0;
 
-        uint32_t        ret;
+        uint32_t ret = 0;
 
         /* NOTE: A input for bsf MUST NOT be 0 */
         for (int i = 0; i < r + 1; i++, d ^= 1 << ret)
@@ -161,27 +161,6 @@ cachealign_free(uint32_t *p) {
         delete[] p;
 }
 #endif /* __USE_POSIX_MEMALIGN__ */
-
-/* For comparison with SIMD instructions */
-static const uint8_t
-lookup32[] = {
-        7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        3, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0
-};
 
 class BitVector {
 private:
@@ -258,12 +237,11 @@ private:
 
         /*--- Private functions below ---*/
         void init(const BitVector& bv) {
-                uint32_t        *lev1p;
-                uint8_t         *lev2p;
-                block_t         *lev3p;
+                uint32_t *lev1p = NULL;
+                uint8_t *lev2p = NULL;
+                block_t *lev3p = NULL;
 
-                uint32_t idx = 0;
-                uint32_t nbits = 0;
+                uint32_t idx = 0, nbits = 0;
 
                 do {
                         if (idx % LEVEL1_NUM == 0) {
