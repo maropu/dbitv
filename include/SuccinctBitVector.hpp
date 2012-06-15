@@ -267,7 +267,7 @@ class SuccinctRank {
 
         uint32_t r = *lev1p + *(lev2p + offset);
 
-        block_t *blk = static_cast<block_t *>(lev1p + SIMD_ALIGN +
+        block_t *blk = reinterpret_cast<block_t *>(lev1p + SIMD_ALIGN +
         BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM)) + offset;
         uint32_t rem = (pos % LEVEL2_NUM) % BSIZE;
 
