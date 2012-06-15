@@ -1,146 +1,171 @@
 /*-----------------------------------------------------------------------------
  *  run_benchmark.cpp - A benchmark for SuccinctBitVector.hpp
  *
- *  Coding-Style:
- *      emacs) Mode: C, tab-width: 8, c-basic-offset: 8, indent-tabs-mode: nil
- *      vi) tabstop: 8, expandtab
+ *  Coding-Style: google-styleguide
+ *      https://code.google.com/p/google-styleguide/
  *
- *  Authors:
- *      Takeshi Yamamuro <linguin.m.s_at_gmail.com>
+ *  Copyright 2012 Takeshi Yamamuro <linguin.m.s_at_gmail.com>
  *-----------------------------------------------------------------------------
  */
 
-#include <stdio.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <time.h>
-#include <pthread.h>
 #include <sys/time.h>
+#include <cmdline.h>
+#include <glog/logging.h>
 
 #include <cstdio>
-#include <iostream>
+#include <cstdarg>
+#include <cstdlib>
+#include <ctime>
 #include <memory>
+#include <algorithm>
+#include <vector>
 
 #include "SuccinctBitVector.hpp"
 
-#include "cmdline.h"
-#include "glog/logging.h"
+namespace {
 
-using namespace std;
-using namespace succinct::dense;
+const double BIT_DENSITY = 0.50;
+const size_t NTRIALS = 11;
 
-static double  __gettimeofday_sec(void);
-static void __show_result(double t,
-                int count, const char *msg, ...);
+class Timer {
+ public:
+  Timer() : base_(get_time()) {}
+  ~Timer() throw() {  }
 
-/* Timer resulution: ms */
-#define SV_START_MS_TIMER       \
-        {                       \
-                double  temp = __gettimeofday_sec()
-#define SV_STOP_MS_TIMER(t)     \
-                t = __gettimeofday_sec() - temp;     \
-        }
+  double elapsed() const {
+    return get_time() - base_;
+  }
 
-int 
-main(int argc, char **argv)
-{
-        SuccinctBitVector       bv;
-        cmdline::parser         p;
+  void reset() {
+    base_ = get_time();
+  }
 
-        /* Parse a command line */
-        p.add<int>("nloop", 'l', "loop num (1000-1000000000)",
-                        false, 10000000, cmdline::range(1000, 1000000000));
-        p.add<int>("bitsz", 'b', "bit size (1000-1000000000))",
-                false, 1000000, cmdline::range(1000, 1000000000));
+ private:
+  double  base_;
 
-        p.parse_check(argc, argv);
+  static double get_time() {
+    struct timeval  tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + static_cast<double>(tv.tv_usec*1e-6);
+  }
 
-        google::InitGoogleLogging(argv[0]);
+  Timer(const Timer &);
+  Timer &operator=(const Timer &);
+};
+
+/* Generate a randomized value */
+uint32_t __xor128() {
+  static uint32_t x = 123456789;
+  static uint32_t y = 362436069;
+  static uint32_t z = 521288629;
+  static uint32_t w = 88675123;
+
+  uint32_t t = (x ^ (x << 11));
+  x = y, y = z, z = w;
+
+  return (w = (w ^ (w >> 19)) ^ (t ^ (t >> 8)));
+}
+
+void __show_result(const std::vector<double>& tv,
+                   int count, const char *msg, ...) {
+  if (msg != NULL) {
+    va_list vargs;
+
+    va_start(vargs, msg);
+    vfprintf(stdout, msg, vargs);
+    va_end(vargs);
+
+    printf("\n");
+  }
+
+  /* Get the value of median */
+  std::sort(tv.begin(), tv.end());
+  double t = tv[tv.size() / 2];
+
+  printf(" Total Time(count:%d): %lf\n", count, t);
+  printf(" Throughputs(query/sec): %lf\n", count / t);
+  printf(" Unit Speed(sec/query): %lfns\n", t * 1000000000 / count);
+}
+
+} /* namespace */
+
+int main(int argc, char **argv) {
+  succinct::dense::SuccinctBitVector  bv;
+  cmdline::parser p;
+
+  /* Parse a command line */
+  p.add<int>("nloop", 'l', "loop num (1000-1000000000)",
+             false, 10000000, cmdline::range(1000, 1000000000));
+  p.add<int>("bitsz", 'b', "bit size (1000-1000000000))",
+             false, 1000000, cmdline::range(1000, 1000000000));
+
+  p.parse_check(argc, argv);
+
+  google::InitGoogleLogging(argv[0]);
 #ifndef NDEBUG
-        google::LogToStderr();
+  google::LogToStderr();
 #endif /* NDEBUG */
 
-        int nloop = p.get<int>("nloop");
-        int bsz = p.get<int>("bitsz");
+  int nloop = p.get<int>("nloop");
+  int bsz = p.get<int>("bitsz");
 
-        /* Generate a sequence of bits */
-        bv.init(bsz);
+  /* Generate a sequence of bits */
+  bv.init(bsz);
 
-        uint32_t nbits = 0;
-        for (int i = 0; i < bsz; i++) {
-                if (i % 2 == 0) {
-                        nbits++;
-                        bv.set_bit(1, i);
-                }
-        }
+  uint32_t nbits = 0;
+  uint64_t thres = (1ULL << 32) * BIT_DENSITY;
+  for (int i = 0; i < bsz; i++) {
+    if (__xor128() < thres) {
+      nbits++;
+      bv.set_bit(1, i);
+    }
+  }
 
-        bv.build();
+  bv.build();
 
-        /* Generate test data-set */
-        std::shared_ptr<uint32_t> rkwk(
-                        new uint32_t[nloop],
-                        default_delete<uint32_t>());
-        std::shared_ptr<uint32_t> stwk(
-                        new uint32_t[nloop],
-                        default_delete<uint32_t>());
+  /* Generate test data-set */
+  std::shared_ptr<uint32_t> rkwk(new uint32_t[nloop],
+                                 std::default_delete<uint32_t>());
+  std::shared_ptr<uint32_t> stwk(new uint32_t[nloop],
+                                 std::default_delete<uint32_t>());
 
-        CHECK(bsz != 0 && nbits != 0);
+  CHECK(bsz != 0 && nbits != 0);
 
-        for (int i = 0; i < nloop; i++)
-                (rkwk.get())[i] = rand() % bsz;
+  for (int i = 0; i < nloop; i++)
+    (rkwk.get())[i] = __xor128() % bsz;
 
-        for (int i = 0; i < nloop; i++)
-                (stwk.get())[i] = rand() % nbits;
+  for (int i = 0; i < nloop; i++)
+    (stwk.get())[i] = __xor128() % nbits;
 
-        /* Start benchmarking rank & select */
-        {
-                double  tm;
+  /* Start benchmarking rank & select */
+  {
+    std::vector<double> rtv;
+    std::vector<double> stv;
 
-                /* A benchmark for rank */
-                SV_START_MS_TIMER;
-                for (int i = 0; i < nloop; i++)
-                        bv.rank((rkwk.get())[i], 1);
-                SV_STOP_MS_TIMER(tm);
+    /* A benchmark for rank */
+    for (size_t i = 0; i < NTRIALS; i++) {
+      Timer t;
 
-                __show_result(tm, nloop, "--rank");
+      for (int j = 0; j < nloop; j++)
+        bv.rank((rkwk.get())[j], 1);
 
-                /* A benchmark for select */
-                SV_START_MS_TIMER;
-                for (int i = 0; i < nloop; i++)
-                        bv.select((stwk.get())[i], 1);
-                SV_STOP_MS_TIMER(tm);
+      rtv.push_back(t.elapsed());
+    }
 
-                __show_result(tm, nloop, "--select");
-        }
+    __show_result(rtv, nloop, "--rank");
 
-        return EXIT_SUCCESS;
-}
+    /* A benchmark for select */
+    for (size_t i = 0; i < NTRIALS; i++) {
+      Timer t;
 
-/* --- Intra functions ---*/
+      for (int j = 0; j < nloop; j++)
+        bv.select((stwk.get())[i], 1);
 
-double 
-__gettimeofday_sec()
-{
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
+      stv.push_back(t.elapsed());
+    }
 
-        return tv.tv_sec + (double)tv.tv_usec*1e-6;
-}
+    __show_result(stv, nloop, "--select");
+  }
 
-void
-__show_result(double t, int count, const char *msg, ...)
-{
-        if (msg != NULL) {
-                va_list vargs;
-
-                va_start(vargs, msg);
-                vfprintf(stderr, msg, vargs);
-                va_end(vargs);
-
-                cout << endl;
-        }
-
-        cout << " Total Time: " << t << endl;
-        cout << " Throughputs(query/sec): " << count / t << endl;
-        cout << " Unit Speed(sec/query): " << t / count << endl;
+  return EXIT_SUCCESS;
 }

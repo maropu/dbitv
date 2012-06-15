@@ -1,12 +1,10 @@
 /*-----------------------------------------------------------------------------
  *  SuccinctBitVector.hpp - A x86/64 optimized rank/select dictionary
  *
- *  Coding-Style:
- *      emacs) Mode: C, tab-width: 8, c-basic-offset: 8, indent-tabs-mode: nil
- *      vi) tabstop: 8, expandtab
+ *  Coding-Style: google-styleguide
+ *      https://code.google.com/p/google-styleguide/
  *
- *  Authors:
- *      Takeshi Yamamuro <linguin.m.s_at_gmail.com>
+ *  Copyright 2012 Takeshi Yamamuro <linguin.m.s_at_gmail.com>
  *-----------------------------------------------------------------------------
  */
 
@@ -14,14 +12,13 @@
 #define __SUCCINCTBITVECTOR_HPP__
 
 #ifndef __STDC_LIMIT_MACROS
- #define __STDC_LIMIT_MACROS
+  #define __STDC_LIMIT_MACROS
 #endif
 
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
-#include <limits.h>
-#include <emmintrin.h>
+#include <cstdlib>
+#include <cstdint>
+#include <cstring>
+#include <climits>
 #include <vector>
 #include <memory>
 
@@ -29,199 +26,167 @@
 
 #define NDEBUG
 
-using namespace std;
-
 namespace succinct {
 namespace dense {
 
 #if  defined(__GNUC__) && __GNUC_PREREQ(2, 2)
- #define        __USE_POSIX_MEMALIGN__
+ #define  __USE_POSIX_MEMALIGN__
 #endif 
 
 /* Block size (32-bit environment) */
-#define BSIZE   32
+#define BSIZE         32
 
-#define LEVEL1_NUM      256
-#define LEVEL2_NUM      BSIZE
+#define LEVEL1_NUM    256
+#define LEVEL2_NUM    BSIZE
 
-#define CACHELINE_SZ    16
-#define SIMD_ALIGN      4
+#define CACHELINE_SZ  16
+#define SIMD_ALIGN    4
 
-#define BYTE2DWORD(x)   ((x) >> 2)
-#define DWORD2BYTE(x)   ((x) << 2)
+#define BYTE2DWORD(x) ((x) >> 2)
+#define DWORD2BYTE(x) ((x) << 2)
 
 /* Locate the position of blocks */
-#define LOCATE_BPOS(pos)        ((pos + BSIZE - 1) / BSIZE)
+#define LOCATE_BPOS(pos)  ((pos + BSIZE - 1) / BSIZE)
 
 /* Defined by BSIZE */
-typedef uint32_t        block_t;
+typedef uint32_t  block_t;
 
 #ifdef __USE_SSE_POPCNT__
-static uint32_t
-popcount(block_t b) {
-        uint32_t        x;
-
-        __asm__("popcnt %1, %0;" :"=r"(x) :"r"(b));
-
-        return x;
+static uint32_t popcount(block_t b) {
+  uint32_t  x;
+  __asm__("popcnt %1, %0;" :"=r"(x) :"r"(b));
+  return x;
 }
 #else
-static const uint8_t
-popcountArray[] = {
-        0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4,1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,
-        1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
-        1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
-        2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
-        1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
-        2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
-        2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
-        3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,4,5,5,6,5,6,6,7,5,6,6,7,6,7,7,8
+static const uint8_t popcountArray[] = {
+  0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4,1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,
+  1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
+  1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
+  2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
+  1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
+  2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
+  2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
+  3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,4,5,5,6,5,6,6,7,5,6,6,7,6,7,7,8
 };
 
-static uint32_t
-popcount(block_t b) {
-        return	popcountArray[(b >> 24) & 0xff] +
-                        popcountArray[(b >> 16) & 0xff] +
-                        popcountArray[(b >> 8) & 0xff] +
-                        popcountArray[b & 0xff];
+static uint32_t popcount(block_t b) {
+  return	popcountArray[(b >> 24) & 0xff] +
+      popcountArray[(b >> 16) & 0xff] +
+      popcountArray[(b >> 8) & 0xff] + popcountArray[b & 0xff];
 }
 #endif /* __USE_SSE_POPCNT__ */
 
-static uint8_t
-selectPos8(uint32_t d, int r) {
-        CHECK(r < 8);
+static uint8_t selectPos8(uint32_t d, int r) {
+  CHECK(r < 8);
 
-        if (d == 0 && r == 0) return 0;
+  if (d == 0 && r == 0)
+    return 0;
 
-        uint32_t ret = 0;
+  uint32_t ret = 0;
 
-        /* NOTE: A input for bsf MUST NOT be 0 */
-        for (int i = 0; i < r + 1; i++, d ^= 1 << ret)
-                __asm__("bsf %1, %0;" :"=r"(ret) :"r"(d));
+  /* NOTE: A input for bsf MUST NOT be 0 */
+  for (int i = 0; i < r + 1; i++, d ^= 1 << ret)
+    __asm__("bsf %1, %0;" :"=r"(ret) :"r"(d));
 
-        return ret;
+  return ret;
 }
 
-static uint32_t
-selectPos(block_t blk, uint32_t r) {
-        CHECK(r < 32);
+static uint32_t selectPos(block_t blk, uint32_t r) {
+  CHECK(r < 32);
 
-        uint32_t nblock = 0;
-        uint32_t cnt = 0;
+  uint32_t nblock = 0;
+  uint32_t cnt = 0;
 
-        while (nblock < 4) {
-                cnt = popcount((blk >> nblock * 8) & 0xff);
+  while (nblock < 4) {
+    cnt = popcount((blk >> nblock * 8) & 0xff);
 
-                if (r < cnt) break;
+    if (r < cnt)
+      break;
 
-                r -= cnt;
-                nblock++;
-        }
+    r -= cnt;
+    nblock++;
+  }
 
-        return nblock * 8 +
-                selectPos8((blk >> (nblock * 8)) & 0xff, r);
+  return nblock * 8 +
+      selectPos8((blk >> (nblock * 8)) & 0xff, r);
 }
 
 #ifdef __USE_POSIX_MEMALIGN__
-static uint32_t *
-cachealign_alloc(uint64_t size) {
-        CHECK(size != 0);
-
-        uint32_t        *p;
-        uint32_t        ret;
-
-        /* NOTE: *lev2 is 64B-aligned so as to avoid cache-misses */
-        ret = posix_memalign((void **)&p,
-                DWORD2BYTE(CACHELINE_SZ), DWORD2BYTE(size));
-
-        return (ret == 0)? p : NULL;
+static uint32_t *cachealign_alloc(uint64_t size) {
+  CHECK(size != 0);
+  uint32_t  *p;
+  /* NOTE: *lev2 is 64B-aligned so as to avoid cache-misses */
+  uint32_t ret = posix_memalign((void **)&p,
+                       DWORD2BYTE(CACHELINE_SZ), DWORD2BYTE(size));
+  return (ret == 0)? p : NULL;
 }
 
-static void
-cachealign_free(uint32_t *p) {
-        if (p == NULL) return;
-        free(p);
+static void cachealign_free(uint32_t *p) {
+  if (p == NULL) return;
+  free(p);
 }
 #else
-static uint32_t *
-cachealign_alloc(uint64_t size) {
-        CHECK(size != 0);
-
-        uint32_t        *p;
-
-        /* FIXME: *lev2 NEEDS to be 64B-aligned. */
-        p = new uint32_t[size + CACHELINE_SZ];
-
-        return p;
+static uint32_t *cachealign_alloc(uint64_t size) {
+  CHECK(size != 0);
+  /* FIXME: *lev2 NEEDS to be 64B-aligned. */
+  uint32_t *p = new uint32_t[size + CACHELINE_SZ];
+  return p;
 }
 
-static void
-cachealign_free(uint32_t *p) {
-        if (p == NULL) return;
-        delete[] p;
+static void cachealign_free(uint32_t *p) {
+  if (p == NULL) return;
+  delete[] p;
 }
 #endif /* __USE_POSIX_MEMALIGN__ */
 
 class BitVector {
-private:
-        uint64_t        size; 
-        uint64_t        none; 
-        vector<block_t> B;
+ public:
+  BitVector() : size_(0), none_(0) {}
+  ~BitVector() throw() {}
 
-public:
-        BitVector() : size(0), none(0) {}
-        ~BitVector() throw() {}
+  void init(uint64_t len) {
+    CHECK(len != 0);
 
-        void init(uint64_t len) {
-                CHECK(len != 0);
+    size_ = len;
 
-                size = len;
+    B_.resize(LOCATE_BPOS(size_));
+    for (uint64_t i = 0; i < B_.size(); i++)
+      B_[i] = 0;
+  }
 
-                B.reserve(LOCATE_BPOS(size));
-                for (uint64_t i = 0; i <
-                                LOCATE_BPOS(size); i++)
-                        B.push_back(0);
-        }
+  void set_bit(uint8_t bit, uint64_t pos) {
+    CHECK(pos < size_);
 
-        void resize(uint64_t len) {
-                CHECK(B.size() < LOCATE_BPOS(len));
+    if (bit)
+      B_[pos / BSIZE] |= 1U << (pos % BSIZE);
+    else
+      B_[pos / BSIZE] &= (~(1U << (pos % BSIZE)));
 
-                B.reserve(LOCATE_BPOS(len));
-                for (uint64_t i = 0; i <
-                                LOCATE_BPOS(len) - B.size(); i++)
-                        B.push_back(0);
+    none_++;
+  }
 
-                size = len;
-        }
+  bool lookup(uint64_t pos) const {
+    CHECK(pos < size_);
+    return (B_[pos / BSIZE] & (0x01 << (pos % BSIZE))) > 0;
+  }
 
-        void set_bit(uint8_t bit, uint64_t pos) {
-                CHECK(pos < size);
+  block_t get_block(uint64_t pos) const {
+    CHECK(pos < size_);
+    return B_[pos];
+  }
 
-                if (bit)
-                        B[pos / BSIZE] |= 1U << (pos % BSIZE);
-                else
-                        B[pos / BSIZE] &= (~(1U << (pos % BSIZE)));
+  uint64_t length() const {
+    return size_;
+  }
 
-                none++;
-        }
+  uint64_t get_none() const {
+    return none_;
+  }
 
-        bool lookup(uint64_t pos) const {
-                CHECK(pos < size);
-                return (B[pos / BSIZE] & (0x01 << (pos % BSIZE))) > 0;
-        }
-
-        block_t get_block(uint64_t pos) const {
-                CHECK(pos < size);
-                return B[pos];
-        }
-
-        uint64_t length() const {
-                return size;
-        }
-
-        uint64_t get_none() const {
-                return none;
-        }
+ private:
+  uint64_t  size_; 
+  uint64_t  none_; 
+  std::vector<block_t>  B_;
 }; /* BitVector */
 
 class SuccinctRank;
@@ -231,261 +196,264 @@ typedef std::shared_ptr<SuccinctRank>   RankPtr;
 typedef std::shared_ptr<SuccinctSelect> SelectPtr;
 
 class SuccinctRank {
-private:
-        uint32_t        size;
-        std::shared_ptr<uint32_t>       mem;
+ public:
+  SuccinctRank() : size_(0) {};
+  explicit SuccinctRank(const BitVector& bv) :
+      size_(bv.length()), mem_(cachealign_alloc(
+              CACHELINE_SZ * ((bv.length() +
+                               LEVEL1_NUM - 1) / LEVEL1_NUM)),
+      cachealign_free) {init(bv);};
+  ~SuccinctRank() throw() {};
 
-        /*--- Private functions below ---*/
-        void init(const BitVector& bv) {
-                uint32_t *lev1p = NULL;
-                uint8_t *lev2p = NULL;
-                block_t *lev3p = NULL;
+  uint32_t rank(uint32_t pos, uint32_t bit) const {
+    CHECK(pos < size_);
 
-                uint32_t idx = 0, nbits = 0;
+    pos++;
 
-                do {
-                        if (idx % LEVEL1_NUM == 0) {
-                                lev1p = mem.get() + CACHELINE_SZ * (idx / LEVEL1_NUM);
-                                lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
-                                lev3p = reinterpret_cast<block_t *>(lev1p + SIMD_ALIGN + BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM));
+    if (bit)
+      return rank1(pos);
+    else
+      return pos - rank1(pos);
+  }
 
-                                *lev1p = nbits;
-                        }
+  std::shared_ptr<uint32_t> get_mem() const {
+    return  mem_;
+  }
 
-                        if (idx % LEVEL2_NUM == 0) {
-                                CHECK(nbits - *lev1p <= UINT8_MAX);
+ private:
+  /*--- Private functions below ---*/
+  void init(const BitVector& bv) {
+    uint32_t  *lev1p = NULL;
+    uint8_t   *lev2p = NULL;
+    block_t   *lev3p = NULL;
 
-                                *lev2p++ = static_cast<uint8_t>(nbits - *lev1p);
-                                block_t blk = bv.get_block(idx / BSIZE);
-                                memcpy(lev3p++, &blk, sizeof(block_t));
-                        }
+    uint32_t idx = 0, nbits = 0;
 
-                        if (idx % BSIZE == 0)
-                                nbits += popcount(bv.get_block(idx / BSIZE));
-                } while (idx++ <= size);
+    do {
+      if (idx % LEVEL1_NUM == 0) {
+        lev1p = mem_.get() + CACHELINE_SZ * (idx / LEVEL1_NUM);
+        lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
+        lev3p = reinterpret_cast<block_t *>(
+            lev1p + SIMD_ALIGN + BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM));
 
-                /* Put some tricky code here for SIMD instructions */
-                for (uint32_t i = idx; i % LEVEL1_NUM != 0; i++) {
-                        if (i % LEVEL2_NUM == 0)
-                                *lev2p++ = static_cast<uint8_t>(UINT8_MAX);
-                }
-        };
+        *lev1p = nbits;
+      }
 
-        uint32_t rank1(uint32_t pos) const {
-                CHECK(pos <= size);
+      if (idx % LEVEL2_NUM == 0) {
+        CHECK(nbits - *lev1p <= UINT8_MAX);
 
-                uint32_t *lev1p = mem.get() + CACHELINE_SZ * (pos / LEVEL1_NUM);
-                uint8_t *lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
+        *lev2p++ = static_cast<uint8_t>(nbits - *lev1p);
+        block_t blk = bv.get_block(idx / BSIZE);
+        memcpy(lev3p++, &blk, sizeof(block_t));
+      }
 
-                uint32_t offset = (pos / LEVEL2_NUM) % (LEVEL1_NUM /LEVEL2_NUM);
+      if (idx % BSIZE == 0)
+        nbits += popcount(bv.get_block(idx / BSIZE));
+      } while (idx++ <= size_);
 
-                CHECK(offset < LEVEL1_NUM / LEVEL2_NUM);
+      /* Put some tricky code here for SIMD instructions */
+      for (uint32_t i = idx; i % LEVEL1_NUM != 0; i++) {
+        if (i % LEVEL2_NUM == 0)
+          *lev2p++ = static_cast<uint8_t>(UINT8_MAX);
+      }
+    }
 
-                uint32_t r = *lev1p + *(lev2p + offset);
+    uint32_t rank1(uint32_t pos) const {
+        CHECK(pos <= size_);
 
-                block_t *blk = static_cast<block_t *>(lev1p + SIMD_ALIGN +
-                                BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM)) + offset;
-                uint32_t rem = (pos % LEVEL2_NUM) % BSIZE;
+        uint32_t *lev1p = mem_.get() + CACHELINE_SZ * (pos / LEVEL1_NUM);
+        uint8_t *lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
 
-                r += popcount((*blk) & ((1ULL << rem) - 1));
+        uint32_t offset = (pos / LEVEL2_NUM) % (LEVEL1_NUM /LEVEL2_NUM);
 
-                return r;
-        }
+        CHECK(offset < LEVEL1_NUM / LEVEL2_NUM);
 
-public:
-        SuccinctRank() : size(0) {};
-        explicit SuccinctRank(const BitVector& bv) :
-                size(bv.length()), mem(cachealign_alloc(CACHELINE_SZ *
-                                ((bv.length() + LEVEL1_NUM - 1) / LEVEL1_NUM)),
-                                cachealign_free) {init(bv);};
-        ~SuccinctRank() throw() {};
+        uint32_t r = *lev1p + *(lev2p + offset);
 
-        uint32_t rank(uint32_t pos, uint32_t bit) const {
-                if (++pos > size)
-                        throw "Overflow Exception: pos";
+        block_t *blk = static_cast<block_t *>(lev1p + SIMD_ALIGN +
+        BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM)) + offset;
+        uint32_t rem = (pos % LEVEL2_NUM) % BSIZE;
 
-                if (bit)
-                        return rank1(pos);
-                else
-                        return pos - rank1(pos);
-        }
+        r += popcount((*blk) & ((1ULL << rem) - 1));
 
-        std::shared_ptr<uint32_t> get_mem() const {
-                return  mem;
-        }
+        return r;
+    }
+
+  uint32_t  size_;
+  std::shared_ptr<uint32_t> mem_;
 }; /* SuccinctRank */
 
 class SuccinctSelect {
-private:
-        uint32_t        size;
-        uint32_t        bit;
-        RankPtr         rkQ;
+ public:
+  SuccinctSelect() : size_(0) {};
+  explicit SuccinctSelect(const BitVector& bv,
+                          uint8_t bit, RankPtr& rk) :
+      size_(0), bit_(bit), rk_(rk) {init(bv);};
+  ~SuccinctSelect() throw() {};
 
-        /*
-         * A reference to the rank dictionary
-         * of the orignal bit-vector.
-         */
-        RankPtr         rk;
+  uint32_t select(uint32_t pos) const {
+    CHECK(pos < size_);
 
-        /*--- Private functions below ---*/
-        void init(const BitVector& bv) {
-                block_t         blk;
-                BitVector       Q;
+    /* Search the position on LEVEL1 */
+    uint32_t lev1pos = rkQ_->rank(pos, 1) - 1;
 
-                uint64_t sz = bv.length();
-                uint32_t bsize = (sz + BSIZE - 1) / BSIZE;
+    uint32_t *lev1p = rk_->get_mem().get() + CACHELINE_SZ * lev1pos;
 
-                /* Calculate sz in advance */
-                for (uint32_t i = 0; i < bsize; i++) {
-                        blk = block(bv.get_block(i), bit);
+    CHECK(pos >= cumltv(*lev1p, lev1pos * LEVEL1_NUM, bit_));
 
-                        if ((i + 1) * BSIZE > sz) {
-                                uint32_t rem = sz - i * BSIZE;
-                                blk &= ((1 << rem) - 1);
-                        }
+    uint8_t lpos = pos - cumltv(*lev1p, lev1pos * LEVEL1_NUM, bit_);
 
-                        size += popcount(blk);
-                }
+    /* Search the position on LEVEL2 */
+    uint8_t *lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
 
-                Q.init(size);
+    uint32_t lev2pos = 0;
 
-                uint32_t qcount = 0;
-                for (uint32_t i = 0; i < bsize; i++) {
-                        if (i % (LEVEL1_NUM / BSIZE) == 0)
-                                Q.set_bit(1, qcount);
+    do {
+      if (cumltv(*(lev2p + lev2pos + 1),
+                 (lev2pos + 1) * LEVEL2_NUM, bit_) > lpos) break;
+    } while (++lev2pos < LEVEL1_NUM / LEVEL2_NUM - 1);
 
-                        blk = block(bv.get_block(i), bit);
-                        qcount += popcount(blk);
-                }
+    /* Count the left bits */
+    CHECK(lpos >= cumltv(*(lev2p + lev2pos), lev2pos * LEVEL2_NUM, bit_));
 
-                RankPtr __rkQ(new SuccinctRank(Q));
-                rkQ = __rkQ;
-        }
+    uint32_t rem = lpos - cumltv(*(lev2p + lev2pos),
+                                 lev2pos * LEVEL2_NUM, bit_);
 
-        uint32_t cumltv(uint32_t val, uint32_t pos, uint8_t bit) const {
-                if (bit)        return val;
-                else    return pos - val;
-        }
+    block_t *blk = static_cast<block_t *>(
+        lev1p + SIMD_ALIGN + BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM)) + lev2pos;
 
-        block_t block(block_t b, uint8_t bit) const {
-                if (bit)        return b;
-                else    return ~b;
-        }
+    return lev1pos * LEVEL1_NUM + lev2pos * LEVEL2_NUM +
+        selectPos(block(*blk, bit_), rem);
+  }
 
-public:
-        SuccinctSelect() : size(0) {};
-        explicit SuccinctSelect(const BitVector& bv,
-                        uint8_t bit, RankPtr& srk) :
-                size(0), bit(bit), rk(srk) {init(bv);};
-        ~SuccinctSelect() throw() {};
+ private:
+  /*--- Private functions below ---*/
+  void init(const BitVector& bv) {
+    block_t   blk;
+    BitVector Q;
 
-        uint32_t select(uint32_t pos) const {
-                CHECK(pos < size);
+    uint64_t sz = bv.length();
+    uint32_t bsize = (sz + BSIZE - 1) / BSIZE;
 
-                /* Search the position on LEVEL1 */
-                uint32_t lev1pos = rkQ->rank(pos, 1) - 1;
+    /* Calculate sz in advance */
+    for (uint32_t i = 0; i < bsize; i++) {
+      blk = block(bv.get_block(i), bit_);
 
-                uint32_t *lev1p = rk->get_mem().get() + CACHELINE_SZ * lev1pos;
+      if ((i + 1) * BSIZE > sz) {
+        uint32_t rem = sz - i * BSIZE;
+        blk &= ((1 << rem) - 1);
+      }
 
-                CHECK(pos >= cumltv(*lev1p, lev1pos * LEVEL1_NUM, bit));
+      size_ += popcount(blk);
+    }
 
-                uint8_t lpos = pos - cumltv(
-                        *lev1p, lev1pos * LEVEL1_NUM, bit);
+    Q.init(size_);
 
-                /* Search the position on LEVEL2 */
-                uint8_t *lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
+    uint32_t qcount = 0;
+    for (uint32_t i = 0; i < bsize; i++) {
+      if (i % (LEVEL1_NUM / BSIZE) == 0)
+      Q.set_bit(1, qcount);
 
-                uint32_t lev2pos = 0;
+      blk = block(bv.get_block(i), bit_);
+      qcount += popcount(blk);
+    }
 
-                do {
-                        if (cumltv(*(lev2p + lev2pos + 1),
-                                        (lev2pos + 1) * LEVEL2_NUM, bit) > lpos)
-                                break;
-                } while (++lev2pos < LEVEL1_NUM / LEVEL2_NUM - 1);
+    RankPtr rkQ(new SuccinctRank(Q));
+    rkQ_ = rkQ;
+  }
 
-                /* Count the left bits */
-                CHECK(lpos >= cumltv(*(lev2p + lev2pos), lev2pos * LEVEL2_NUM, bit));
+  uint32_t cumltv(uint32_t val, uint32_t pos,
+                  uint8_t bit) const {
+    if (bit)
+      return val;
+    else
+      return pos - val;
+  }
 
-                uint32_t rem = lpos - cumltv(*(lev2p + lev2pos), lev2pos * LEVEL2_NUM, bit);
+  block_t block(block_t b, uint8_t bit) const {
+    if (bit)
+      return b;
+    else
+      return ~b;
+  }
 
-                block_t *blk = static_cast<block_t *>(lev1p + SIMD_ALIGN +
-                                BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM)) + lev2pos;
+  uint32_t  size_;
+  uint32_t  bit_;
+  RankPtr   rkQ_;
 
-                return lev1pos * LEVEL1_NUM + lev2pos * LEVEL2_NUM +
-                        selectPos(block(*blk, bit), rem);
-        }
+  /*
+  * A reference to the rank dictionary
+  * of the orignal bit-vector.
+  */
+  RankPtr   rk_;
 }; /* SuccinctSelect */
 
 class SuccinctBitVector {
-private:
-        /* A sequence of bit-array */
-        BitVector       bv;
+ public:
+  SuccinctBitVector() : rk_((SuccinctRank *)0),
+    st0_((SuccinctSelect *)0), st1_((SuccinctSelect *)0) {};
+  ~SuccinctBitVector() throw() {};
 
-        /* A rank/select dictionary for dense */
-        RankPtr         rk;
-        SelectPtr       st0;
-        SelectPtr       st1;
+  /* Functions to initialize */
+  void init(uint64_t size) {bv_.init(size);}
 
-public:
-        SuccinctBitVector() : rk((SuccinctRank *)0),
-                st0((SuccinctSelect *)0), st1((SuccinctSelect *)0) {};
-        ~SuccinctBitVector() throw() {};
+  void build() {
+    if (bv_.length() == 0)
+      throw "Not initialized yet: bv_";
 
-        /* Functions to initialize */
-        void init(uint64_t size) {bv.init(size);}
+    RankPtr rk(new SuccinctRank(bv_));
+    SelectPtr st0(new SuccinctSelect(bv_, 0, rk));
+    SelectPtr st1(new SuccinctSelect(bv_, 1, rk));
 
-        void build() {
-                if (bv.length() == 0)
-                        throw "Not initialized yet: bv";
+    rk_ = rk, st0_ = st0, st1_ = st1;
+  }
 
-                RankPtr __rk(new SuccinctRank(bv));
-                SelectPtr __st0(new SuccinctSelect(bv, 0, __rk));
-                SelectPtr __st1(new SuccinctSelect(bv, 1, __rk));
+  void set_bit(uint8_t bit, uint64_t pos) {
+    if (pos >= bv_.length())
+      throw "Invalid input: pos";
+    if (bit > 1)
+      throw "Invalid input: bit";
 
-                rk = __rk, st0 = __st0, st1 = __st1;
-        }
+    bv_.set_bit(bit, pos);
+  }
 
-        void resize(uint64_t size) {bv.resize(size);}
+  bool lookup(uint64_t pos) const {
+    if (pos >= bv_.length())
+      throw "Invalid input: pos";
 
-        void set_bit(uint8_t bit, uint64_t pos) {
-                if (pos >= bv.length())
-                        throw "Invalid input: pos";
-                if (bit > 1)
-                        throw "Invalid input: bit";
+    return bv_.lookup(pos);
+  }
 
-                bv.set_bit(bit, pos);
-        }
+  /* Rank & Select operations */
+  uint32_t rank(uint32_t pos, uint8_t bit) const {
+    if (pos >= bv_.length())
+      throw "Invalid input: pos";
+    if (bit > 1)
+      throw "Invalid input: bit";
 
-        bool lookup(uint64_t pos) const {
-                if (pos >= bv.length())
-                        throw "Invalid input: pos";
+    return rk_->rank(pos, bit);
+  }
 
-                return bv.lookup(pos);
-        }
+  uint32_t select(uint32_t pos, uint8_t bit) const {
+    if (pos >= bv_.get_none())
+      throw "Invalid input: pos";
+    if (bit > 1)
+      throw "Invalid input: bit";
 
-        /* Rank & Select operations */
-        uint32_t rank(uint32_t pos, uint8_t bit) const {
-                if (pos >= bv.length())
-                        throw "Invalid input: pos";
-                if (bit > 1)
-                        throw "Invalid input: bit";
+    if (bit)
+      return st1_->select(pos);
+    else
+      return st0_->select(pos);
+  }
 
-                return rk->rank(pos, bit);
-        }
+ private:
+  /* A sequence of bit-array */
+  BitVector bv_;
 
-        uint32_t select(uint32_t pos, uint8_t bit) const {
-                if (pos >= bv.get_none())
-                        throw "Invalid input: pos";
-                if (bit > 1)
-                        throw "Invalid input: bit";
-
-                if (bit)        return st1->select(pos);
-                else    return st0->select(pos);
-        }
-
-        uint64_t get_size() const {
-                return 0;
-        }
+  /* A rank/select dictionary for dense */
+  RankPtr   rk_;
+  SelectPtr st0_;
+  SelectPtr st1_;
 }; /* SuccinctBitVector */
 
 } /* dense */

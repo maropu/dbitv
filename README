@@ -14,9 +14,14 @@ Some techniques to harness x86/64 platforms are put into the code.
 
 Prequisites
 -----------
-google-glog
+* google-glog
+* gcc >= 4.4.x
 
 History
 -----------
-2011-12-20 version 0.1.0
+2012-6-15 version 0.1.0
+
+Authors
+-----------
+* Takeshi Yamamuro, linguin.m.s_at_gmail.com
 
