@@ -25,7 +25,6 @@ class SuccinctBVTest : public ::testing::Test {
 
     virtual void TearDown() {}
 
- private:
   succinct::dense::SuccinctBitVector bv;
 };
 

@@ -31,25 +31,22 @@ namespace dense {
 
 #if  defined(__GNUC__) && __GNUC_PREREQ(2, 2)
  #define  __USE_POSIX_MEMALIGN__
-#endif 
-
-/* Block size (32-bit environment) */
-#define BSIZE         32
-
-#define LEVEL1_NUM    256
-#define LEVEL2_NUM    BSIZE
-
-#define CACHELINE_SZ  16
-#define SIMD_ALIGN    4
-
-#define BYTE2DWORD(x) ((x) >> 2)
-#define DWORD2BYTE(x) ((x) << 2)
-
-/* Locate the position of blocks */
-#define LOCATE_BPOS(pos)  ((pos + BSIZE - 1) / BSIZE)
+#endif
 
 /* Defined by BSIZE */
 typedef uint32_t  block_t;
+
+#define BYTE2DWORD(x)     ((x) >> 2)
+#define DWORD2BYTE(x)     ((x) << 2)
+#define LOCATE_BPOS(pos)  ((pos + BSIZE - 1) / BSIZE)
+
+/* Block size (32-bit environment) */
+const size_t BSIZE = 32;
+const size_t CACHELINE_SZ = 16;
+const size_t SIMD_ALIGN = 4;
+
+const size_t LEVEL1_NUM = 256;
+const size_t LEVEL2_NUM = BSIZE;
 
 #ifdef __USE_SSE_POPCNT__
 static uint32_t popcount(block_t b) {

@@ -66,7 +66,7 @@ uint32_t __xor128() {
   return (w = (w ^ (w >> 19)) ^ (t ^ (t >> 8)));
 }
 
-void __show_result(const std::vector<double>& tv,
+void __show_result(std::vector<double>& tv,
                    int count, const char *msg, ...) {
   if (msg != NULL) {
     va_list vargs;
@@ -79,7 +79,7 @@ void __show_result(const std::vector<double>& tv,
   }
 
   /* Get the value of median */
-  std::sort(tv.begin(), tv.end());
+  sort(tv.begin(), tv.end());
   double t = tv[tv.size() / 2];
 
   printf(" Total Time(count:%d): %lf\n", count, t);
