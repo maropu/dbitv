@@ -11,7 +11,7 @@
 #include <gtest/gtest.h>
 #include "SuccinctBitVector.hpp"
 
-#define BITV_SZ 10000LL
+#define BITV_SZ 262144LL
 
 class SuccinctBVTest : public ::testing::Test {
  public:

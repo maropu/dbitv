@@ -197,8 +197,7 @@ class SuccinctRank {
   SuccinctRank() : size_(0) {};
   explicit SuccinctRank(const BitVector& bv) :
       size_(bv.length()), mem_(cachealign_alloc(
-              CACHELINE_SZ * ((bv.length() +
-                               LEVEL1_NUM - 1) / LEVEL1_NUM)),
+              CACHELINE_SZ * ((bv.length() / LEVEL1_NUM) + 1)),
       cachealign_free) {init(bv);};
   ~SuccinctRank() throw() {};
 
@@ -246,35 +245,35 @@ class SuccinctRank {
 
       if (idx % BSIZE == 0)
         nbits += popcount(bv.get_block(idx / BSIZE));
-      } while (idx++ <= size_);
+    } while (idx++ <= size_);
 
-      /* Put some tricky code here for SIMD instructions */
-      for (uint32_t i = idx; i % LEVEL1_NUM != 0; i++) {
-        if (i % LEVEL2_NUM == 0)
-          *lev2p++ = static_cast<uint8_t>(UINT8_MAX);
-      }
+    /* Put some tricky code here for SIMD instructions */
+    for (uint32_t i = idx; i % LEVEL1_NUM != 0; i++) {
+      if (i % LEVEL2_NUM == 0)
+        *lev2p++ = static_cast<uint8_t>(UINT8_MAX);
     }
+  }
 
-    uint32_t rank1(uint32_t pos) const {
-        CHECK(pos <= size_);
+  uint32_t rank1(uint32_t pos) const {
+    CHECK(pos <= size_);
 
-        uint32_t *lev1p = mem_.get() + CACHELINE_SZ * (pos / LEVEL1_NUM);
-        uint8_t *lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
+    uint32_t *lev1p = mem_.get() + CACHELINE_SZ * (pos / LEVEL1_NUM);
+    uint8_t *lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
 
-        uint32_t offset = (pos / LEVEL2_NUM) % (LEVEL1_NUM /LEVEL2_NUM);
+    uint32_t offset = (pos / LEVEL2_NUM) % (LEVEL1_NUM /LEVEL2_NUM);
 
-        CHECK(offset < LEVEL1_NUM / LEVEL2_NUM);
+    CHECK(offset < LEVEL1_NUM / LEVEL2_NUM);
 
-        uint32_t r = *lev1p + *(lev2p + offset);
+    uint32_t r = *lev1p + *(lev2p + offset);
 
-        block_t *blk = reinterpret_cast<block_t *>(lev1p + SIMD_ALIGN +
-        BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM)) + offset;
-        uint32_t rem = (pos % LEVEL2_NUM) % BSIZE;
+    block_t *blk = reinterpret_cast<block_t *>(lev1p + SIMD_ALIGN +
+    BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM)) + offset;
+    uint32_t rem = (pos % LEVEL2_NUM) % BSIZE;
 
-        r += popcount((*blk) & ((1ULL << rem) - 1));
+    r += popcount((*blk) & ((1ULL << rem) - 1));
 
-        return r;
-    }
+    return r;
+  }
 
   uint32_t  size_;
   std::shared_ptr<uint32_t> mem_;
