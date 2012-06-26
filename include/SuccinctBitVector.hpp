@@ -22,37 +22,36 @@
 #include <vector>
 #include <memory>
 
+#include <nmmintrin.h>
+
 #include "glog/logging.h"
 
-#define NDEBUG
+#ifndef NDEBUG
+  #define __assert(x) CHECK(x)
+#else
+  #define __assert(x)
+#endif 
 
 namespace succinct {
 namespace dense {
 
-#if  defined(__GNUC__) && __GNUC_PREREQ(2, 2)
- #define  __USE_POSIX_MEMALIGN__
-#endif
+/* namespace { */
 
 /* Defined by BSIZE */
-typedef uint32_t  block_t;
+typedef uint64_t  block_t;
 
-#define BYTE2DWORD(x)     ((x) >> 2)
-#define DWORD2BYTE(x)     ((x) << 2)
-#define LOCATE_BPOS(pos)  ((pos + BSIZE - 1) / BSIZE)
-
-/* Block size (32-bit environment) */
-const size_t BSIZE = 32;
-const size_t CACHELINE_SZ = 16;
-const size_t SIMD_ALIGN = 4;
-
-const size_t LEVEL1_NUM = 256;
-const size_t LEVEL2_NUM = BSIZE;
+static const size_t BSIZE = 64;
+static const size_t PRESUM_SZ = 128;
+static const size_t CACHELINE_SZ = 64;
 
 #ifdef __USE_SSE_POPCNT__
-static uint32_t popcount(block_t b) {
-  uint32_t  x;
-  __asm__("popcnt %1, %0;" :"=r"(x) :"r"(b));
-  return x;
+static uint64_t popcount64(block_t b) {
+#ifdef __x86_64__
+  return _mm_popcnt_u64(b);
+#else
+  return _mm_popcnt_u32((b >> 32) & 0xffffffff) +
+      _mm_popcnt_u32(b & 0xffffffff);
+#endif
 }
 #else
 static const uint8_t popcountArray[] = {
@@ -66,36 +65,90 @@ static const uint8_t popcountArray[] = {
   3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,4,5,5,6,5,6,6,7,5,6,6,7,6,7,7,8
 };
 
-static uint32_t popcount(block_t b) {
-  return	popcountArray[(b >> 24) & 0xff] +
-      popcountArray[(b >> 16) & 0xff] +
+static uint64_t popcount64(block_t b) {
+  return	popcountArray[(b >> 56) & 0xff] + popcountArray[(b >> 48) & 0xff] +
+      popcountArray[(b >> 40) & 0xff] + popcountArray[(b >> 32) & 0xff] +
+      popcountArray[(b >> 24) & 0xff] + popcountArray[(b >> 16) & 0xff] +
       popcountArray[(b >> 8) & 0xff] + popcountArray[b & 0xff];
 }
 #endif /* __USE_SSE_POPCNT__ */
 
-static uint8_t selectPos8(uint32_t d, int r) {
-  CHECK(r < 8);
+static const uint8_t selectPos_[] = {
+  8,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+  5,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+  6,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+  5,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+  7,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+  5,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+  6,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+  5,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,
+  8,8,8,1,8,2,2,1,8,3,3,1,3,2,2,1,8,4,4,1,4,2,2,1,4,3,3,1,3,2,2,1,
+  8,5,5,1,5,2,2,1,5,3,3,1,3,2,2,1,5,4,4,1,4,2,2,1,4,3,3,1,3,2,2,1,
+  8,6,6,1,6,2,2,1,6,3,3,1,3,2,2,1,6,4,4,1,4,2,2,1,4,3,3,1,3,2,2,1,
+  6,5,5,1,5,2,2,1,5,3,3,1,3,2,2,1,5,4,4,1,4,2,2,1,4,3,3,1,3,2,2,1,
+  8,7,7,1,7,2,2,1,7,3,3,1,3,2,2,1,7,4,4,1,4,2,2,1,4,3,3,1,3,2,2,1,
+  7,5,5,1,5,2,2,1,5,3,3,1,3,2,2,1,5,4,4,1,4,2,2,1,4,3,3,1,3,2,2,1,
+  7,6,6,1,6,2,2,1,6,3,3,1,3,2,2,1,6,4,4,1,4,2,2,1,4,3,3,1,3,2,2,1,
+  6,5,5,1,5,2,2,1,5,3,3,1,3,2,2,1,5,4,4,1,4,2,2,1,4,3,3,1,3,2,2,1,
+  8,8,8,8,8,8,8,2,8,8,8,3,8,3,3,2,8,8,8,4,8,4,4,2,8,4,4,3,4,3,3,2,
+  8,8,8,5,8,5,5,2,8,5,5,3,5,3,3,2,8,5,5,4,5,4,4,2,5,4,4,3,4,3,3,2,
+  8,8,8,6,8,6,6,2,8,6,6,3,6,3,3,2,8,6,6,4,6,4,4,2,6,4,4,3,4,3,3,2,
+  8,6,6,5,6,5,5,2,6,5,5,3,5,3,3,2,6,5,5,4,5,4,4,2,5,4,4,3,4,3,3,2,
+  8,8,8,7,8,7,7,2,8,7,7,3,7,3,3,2,8,7,7,4,7,4,4,2,7,4,4,3,4,3,3,2,
+  8,7,7,5,7,5,5,2,7,5,5,3,5,3,3,2,7,5,5,4,5,4,4,2,5,4,4,3,4,3,3,2,
+  8,7,7,6,7,6,6,2,7,6,6,3,6,3,3,2,7,6,6,4,6,4,4,2,6,4,4,3,4,3,3,2,
+  7,6,6,5,6,5,5,2,6,5,5,3,5,3,3,2,6,5,5,4,5,4,4,2,5,4,4,3,4,3,3,2,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,3,8,8,8,8,8,8,8,4,8,8,8,4,8,4,4,3,
+  8,8,8,8,8,8,8,5,8,8,8,5,8,5,5,3,8,8,8,5,8,5,5,4,8,5,5,4,5,4,4,3,
+  8,8,8,8,8,8,8,6,8,8,8,6,8,6,6,3,8,8,8,6,8,6,6,4,8,6,6,4,6,4,4,3,
+  8,8,8,6,8,6,6,5,8,6,6,5,6,5,5,3,8,6,6,5,6,5,5,4,6,5,5,4,5,4,4,3,
+  8,8,8,8,8,8,8,7,8,8,8,7,8,7,7,3,8,8,8,7,8,7,7,4,8,7,7,4,7,4,4,3,
+  8,8,8,7,8,7,7,5,8,7,7,5,7,5,5,3,8,7,7,5,7,5,5,4,7,5,5,4,5,4,4,3,
+  8,8,8,7,8,7,7,6,8,7,7,6,7,6,6,3,8,7,7,6,7,6,6,4,7,6,6,4,6,4,4,3,
+  8,7,7,6,7,6,6,5,7,6,6,5,6,5,5,3,7,6,6,5,6,5,5,4,6,5,5,4,5,4,4,3,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,4,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,5,8,8,8,8,8,8,8,5,8,8,8,5,8,5,5,4,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,6,8,8,8,8,8,8,8,6,8,8,8,6,8,6,6,4,
+  8,8,8,8,8,8,8,6,8,8,8,6,8,6,6,5,8,8,8,6,8,6,6,5,8,6,6,5,6,5,5,4,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,8,8,8,8,8,8,8,7,8,8,8,7,8,7,7,4,
+  8,8,8,8,8,8,8,7,8,8,8,7,8,7,7,5,8,8,8,7,8,7,7,5,8,7,7,5,7,5,5,4,
+  8,8,8,8,8,8,8,7,8,8,8,7,8,7,7,6,8,8,8,7,8,7,7,6,8,7,7,6,7,6,6,4,
+  8,8,8,7,8,7,7,6,8,7,7,6,7,6,6,5,8,7,7,6,7,6,6,5,7,6,6,5,6,5,5,4,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,5,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,6,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,6,8,8,8,8,8,8,8,6,8,8,8,6,8,6,6,5,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,8,8,8,8,8,8,8,7,8,8,8,7,8,7,7,5,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,8,8,8,8,8,8,8,7,8,8,8,7,8,7,7,6,
+  8,8,8,8,8,8,8,7,8,8,8,7,8,7,7,6,8,8,8,7,8,7,7,6,8,7,7,6,7,6,6,5,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,6,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7,8,8,8,8,8,8,8,7,8,8,8,7,8,7,7,6,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+  8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,7
+};
 
-  if (d == 0 && r == 0)
-    return 0;
+static uint64_t selectPos(block_t blk, uint64_t r) {
+  __assert(r <= 32);
 
-  uint32_t ret = 0;
+  uint64_t nblock = 0;
+  uint64_t cnt = 0;
 
-  /* NOTE: A input for bsf MUST NOT be 0 */
-  for (int i = 0; i < r + 1; i++, d ^= 1 << ret)
-    __asm__("bsf %1, %0;" :"=r"(ret) :"r"(d));
-
-  return ret;
-}
-
-static uint32_t selectPos(block_t blk, uint32_t r) {
-  CHECK(r < 32);
-
-  uint32_t nblock = 0;
-  uint32_t cnt = 0;
-
-  while (nblock < 4) {
-    cnt = popcount((blk >> nblock * 8) & 0xff);
+  while (nblock < 8) {
+    cnt = popcount64(static_cast<uint64_t>(
+            ((blk >> nblock * 8) & 0xff)));
 
     if (r < cnt)
       break;
@@ -105,36 +158,20 @@ static uint32_t selectPos(block_t blk, uint32_t r) {
   }
 
   return nblock * 8 +
-      selectPos8((blk >> (nblock * 8)) & 0xff, r);
+      selectPos_[(r << 8) + ((blk >> (nblock * 8)) & 0xff)];
 }
 
-#ifdef __USE_POSIX_MEMALIGN__
-static uint32_t *cachealign_alloc(uint64_t size) {
-  CHECK(size != 0);
-  uint32_t  *p;
-  /* NOTE: *lev2 is 64B-aligned so as to avoid cache-misses */
-  uint32_t ret = posix_memalign((void **)&p,
-                       DWORD2BYTE(CACHELINE_SZ), DWORD2BYTE(size));
-  return (ret == 0)? p : NULL;
-}
-
-static void cachealign_free(uint32_t *p) {
-  if (p == NULL) return;
-  free(p);
-}
-#else
-static uint32_t *cachealign_alloc(uint64_t size) {
-  CHECK(size != 0);
-  /* FIXME: *lev2 NEEDS to be 64B-aligned. */
-  uint32_t *p = new uint32_t[size + CACHELINE_SZ];
-  return p;
-}
-
-static void cachealign_free(uint32_t *p) {
-  if (p == NULL) return;
-  delete[] p;
-}
-#endif /* __USE_POSIX_MEMALIGN__ */
+/*
+ * FIXME: rBlock has 32-byte eachs so that its factor
+ * is easily aligned to cache-lines. The container needs
+ * to align data implicitly(e.g., AlignedVector).
+ */
+typedef struct {
+  block_t   b0;
+  block_t   b1;
+  uint64_t  rk;
+  uint64_t  b0sum;
+} rBlock;
 
 class BitVector {
  public:
@@ -142,38 +179,38 @@ class BitVector {
   ~BitVector() throw() {}
 
   void init(uint64_t len) {
-    CHECK(len != 0);
+    __assert(len != 0);
 
     size_ = len;
+    size_t bnum = (size_ + BSIZE - 1) / BSIZE;
 
-    B_.resize(LOCATE_BPOS(size_));
-    for (uint64_t i = 0; i < B_.size(); i++)
+    B_.resize(bnum);
+    for (size_t i = 0; i < bnum; i++)
       B_[i] = 0;
   }
 
-  void set_bit(uint8_t bit, uint64_t pos) {
-    CHECK(pos < size_);
-
-    if (bit)
-      B_[pos / BSIZE] |= 1U << (pos % BSIZE);
-    else
-      B_[pos / BSIZE] &= (~(1U << (pos % BSIZE)));
-
+  void set_bit(uint64_t pos, uint8_t bit) {
+    __assert(pos < size_);
+    B_[pos / BSIZE] |= uint64_t(1) << (pos % BSIZE);
     none_++;
   }
 
   bool lookup(uint64_t pos) const {
-    CHECK(pos < size_);
-    return (B_[pos / BSIZE] & (0x01 << (pos % BSIZE))) > 0;
+    __assert(pos < size_);
+    return (B_[pos / BSIZE] & (uint64_t(1) << (pos % BSIZE))) > 0;
   }
 
-  block_t get_block(uint64_t pos) const {
-    CHECK(pos < size_);
+  const block_t get_block(uint64_t pos) const {
+    __assert(pos < size_);
     return B_[pos];
   }
 
   uint64_t length() const {
     return size_;
+  }
+
+  uint64_t bsize() const {
+    return B_.size();
   }
 
   uint64_t get_none() const {
@@ -196,13 +233,11 @@ class SuccinctRank {
  public:
   SuccinctRank() : size_(0) {};
   explicit SuccinctRank(const BitVector& bv) :
-      size_(bv.length()), mem_(cachealign_alloc(
-              CACHELINE_SZ * ((bv.length() / LEVEL1_NUM) + 1)),
-      cachealign_free) {init(bv);};
+      size_(bv.length()) {init(bv);};
   ~SuccinctRank() throw() {};
 
-  uint32_t rank(uint32_t pos, uint32_t bit) const {
-    CHECK(pos < size_);
+  uint64_t rank(uint64_t pos, uint8_t bit) const {
+    __assert(pos < size_);
 
     pos++;
 
@@ -212,114 +247,97 @@ class SuccinctRank {
       return pos - rank1(pos);
   }
 
-  std::shared_ptr<uint32_t> get_mem() const {
-    return  mem_;
+  const rBlock& get_rblock(uint64_t idx) const {
+    return  rblk_[idx];
+  }
+
+  rBlock& get_rblock(uint64_t idx) {
+    return  rblk_[idx];
   }
 
  private:
   /*--- Private functions below ---*/
   void init(const BitVector& bv) {
-    uint32_t  *lev1p = NULL;
-    uint8_t   *lev2p = NULL;
-    block_t   *lev3p = NULL;
+    size_t bnum = bv.length() / PRESUM_SZ + 1;
+    rblk_.resize(bnum);
 
-    uint32_t idx = 0, nbits = 0;
+    uint64_t r = 0;
+    size_t pos = 0;
+    for (size_t i = 0; i < bnum; i++, pos += 2) {
+      uint64_t b0 = (pos < bv.bsize())? bv.get_block(pos) : 0;
+      uint64_t b1 = (pos + 1 < bv.bsize())? bv.get_block(pos + 1) : 0;
+      rblk_[i].b0 = b0;
+      rblk_[i].b1 = b1;
+      rblk_[i].rk = r;
 
-    do {
-      if (idx % LEVEL1_NUM == 0) {
-        lev1p = mem_.get() + CACHELINE_SZ * (idx / LEVEL1_NUM);
-        lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
-        lev3p = reinterpret_cast<block_t *>(
-            lev1p + SIMD_ALIGN + BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM));
+      /* b0sum used for select() */
+      uint64_t b0sum = popcount64(b0);
+      rblk_[i].b0sum = b0sum;
 
-        *lev1p = nbits;
-      }
-
-      if (idx % LEVEL2_NUM == 0) {
-        CHECK(nbits - *lev1p <= UINT8_MAX);
-
-        *lev2p++ = static_cast<uint8_t>(nbits - *lev1p);
-        block_t blk = bv.get_block(idx / BSIZE);
-        memcpy(lev3p++, &blk, sizeof(block_t));
-      }
-
-      if (idx % BSIZE == 0)
-        nbits += popcount(bv.get_block(idx / BSIZE));
-    } while (idx++ <= size_);
-
-    /* Put some tricky code here for SIMD instructions */
-    for (uint32_t i = idx; i % LEVEL1_NUM != 0; i++) {
-      if (i % LEVEL2_NUM == 0)
-        *lev2p++ = static_cast<uint8_t>(UINT8_MAX);
+      r += b0sum;
+      r += popcount64(b1);
     }
   }
 
-  uint32_t rank1(uint32_t pos) const {
-    CHECK(pos <= size_);
+  uint64_t rank1(uint64_t pos) const {
+    __assert(pos <= size_);
 
-    uint32_t *lev1p = mem_.get() + CACHELINE_SZ * (pos / LEVEL1_NUM);
-    uint8_t *lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
+    const rBlock& rblk = rblk_[pos / PRESUM_SZ];
 
-    uint32_t offset = (pos / LEVEL2_NUM) % (LEVEL1_NUM /LEVEL2_NUM);
+    uint64_t ret = rblk.rk;
+    uint64_t b0 = rblk.b0;
+    uint64_t b1 = rblk.b1;
 
-    CHECK(offset < LEVEL1_NUM / LEVEL2_NUM);
+    size_t r = pos % 64;
+    uint64_t mask = (uint64_t(1) << r) - 1;
 
-    uint32_t r = *lev1p + *(lev2p + offset);
+    /*
+     * FIXME: gcc seems to generates a conditional jump, so
+     * the code below needs to be replaced with __asm__().
+     */
+    uint64_t m = (pos & 64)? uint64_t(-1) : 0;
+    uint64_t m0 = mask | m;
+    uint64_t m1 = mask & m;
 
-    block_t *blk = reinterpret_cast<block_t *>(lev1p + SIMD_ALIGN +
-    BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM)) + offset;
-    uint32_t rem = (pos % LEVEL2_NUM) % BSIZE;
+    ret += popcount64(b0 & m0);
+    ret += popcount64(b1 & m1);
 
-    r += popcount((*blk) & ((1ULL << rem) - 1));
-
-    return r;
+    return ret;
   }
 
-  uint32_t  size_;
-  std::shared_ptr<uint32_t> mem_;
+  uint64_t  size_;
+  std::vector<rBlock> rblk_;
 }; /* SuccinctRank */
 
 class SuccinctSelect {
  public:
-  SuccinctSelect() : size_(0) {};
+  SuccinctSelect() : bit_(1), size_(0) {};
   explicit SuccinctSelect(const BitVector& bv,
-                          uint8_t bit, RankPtr& rk) :
-      size_(0), bit_(bit), rk_(rk) {init(bv);};
+                          RankPtr& rk, uint8_t bit) :
+      bit_(bit), size_(0), rk_(rk) {init(bv);};
   ~SuccinctSelect() throw() {};
 
-  uint32_t select(uint32_t pos) const {
-    CHECK(pos < size_);
+  uint64_t select(uint64_t pos) const {
+    __assert(pos < size_);
 
-    /* Search the position on LEVEL1 */
-    uint32_t lev1pos = rkQ_->rank(pos, 1) - 1;
+    uint64_t rpos = rkQ_->rank(pos, 1) - 1;
+    rBlock& rblk = rk_->get_rblock(rpos);
 
-    uint32_t *lev1p = rk_->get_mem().get() + CACHELINE_SZ * lev1pos;
+    uint64_t rem = pos - cumltv(rblk.rk, rpos * PRESUM_SZ);
 
-    CHECK(pos >= cumltv(*lev1p, lev1pos * LEVEL1_NUM, bit_));
+    uint64_t rb = 0;
+    block_t blk = 0;
 
-    uint8_t lpos = pos - cumltv(*lev1p, lev1pos * LEVEL1_NUM, bit_);
+    if (cumltv(rblk.b0sum, BSIZE) > rem) {
+      blk = block(rblk.b0);
+      rb = 0;
+    } else {
+      blk = block(rblk.b1);
+      rb = BSIZE;
+      rem -= cumltv(rblk.b0sum, BSIZE);
+    }
 
-    /* Search the position on LEVEL2 */
-    uint8_t *lev2p = reinterpret_cast<uint8_t *>(lev1p + SIMD_ALIGN);
-
-    uint32_t lev2pos = 0;
-
-    do {
-      if (cumltv(*(lev2p + lev2pos + 1),
-                 (lev2pos + 1) * LEVEL2_NUM, bit_) > lpos) break;
-    } while (++lev2pos < LEVEL1_NUM / LEVEL2_NUM - 1);
-
-    /* Count the left bits */
-    CHECK(lpos >= cumltv(*(lev2p + lev2pos), lev2pos * LEVEL2_NUM, bit_));
-
-    uint32_t rem = lpos - cumltv(*(lev2p + lev2pos),
-                                 lev2pos * LEVEL2_NUM, bit_);
-
-    block_t *blk = static_cast<block_t *>(
-        lev1p + SIMD_ALIGN + BYTE2DWORD(LEVEL1_NUM / LEVEL2_NUM)) + lev2pos;
-
-    return lev1pos * LEVEL1_NUM + lev2pos * LEVEL2_NUM +
-        selectPos(block(*blk, bit_), rem);
+    return rpos * PRESUM_SZ + rb + selectPos(blk, rem);
   }
 
  private:
@@ -329,52 +347,46 @@ class SuccinctSelect {
     BitVector Q;
 
     uint64_t sz = bv.length();
-    uint32_t bsize = (sz + BSIZE - 1) / BSIZE;
+    size_t bsize = (sz + BSIZE - 1) / BSIZE;
 
     /* Calculate sz in advance */
-    for (uint32_t i = 0; i < bsize; i++) {
-      blk = block(bv.get_block(i), bit_);
+    for (size_t i = 0; i < bsize; i++) {
+      blk = block(bv.get_block(i));
 
       if ((i + 1) * BSIZE > sz) {
-        uint32_t rem = sz - i * BSIZE;
-        blk &= ((1 << rem) - 1);
+        uint64_t rem = sz - i * BSIZE;
+        blk &= ((uint64_t(1) << rem) - 1);
       }
 
-      size_ += popcount(blk);
+      size_ += popcount64(blk);
     }
 
     Q.init(size_);
 
-    uint32_t qcount = 0;
-    for (uint32_t i = 0; i < bsize; i++) {
-      if (i % (LEVEL1_NUM / BSIZE) == 0)
-      Q.set_bit(1, qcount);
+    uint64_t qcount = 0;
+    for (size_t i = 0; i < bsize; i++) {
+      if (i % (PRESUM_SZ / BSIZE) == 0)
+        Q.set_bit(qcount, 1);
 
-      blk = block(bv.get_block(i), bit_);
-      qcount += popcount(blk);
+      blk = block(bv.get_block(i));
+      qcount += popcount64(blk);
     }
 
     RankPtr rkQ(new SuccinctRank(Q));
     rkQ_ = rkQ;
   }
 
-  uint32_t cumltv(uint32_t val, uint32_t pos,
-                  uint8_t bit) const {
-    if (bit)
-      return val;
-    else
-      return pos - val;
+  inline uint64_t cumltv(uint64_t val,
+                         uint64_t pos) const {
+    return (bit_)? val : pos - val;
   }
 
-  block_t block(block_t b, uint8_t bit) const {
-    if (bit)
-      return b;
-    else
-      return ~b;
+  inline block_t block(block_t b) const {
+    return (bit_)? b : ~b;
   }
 
-  uint32_t  size_;
-  uint32_t  bit_;
+  uint8_t   bit_;
+  uint64_t  size_;
   RankPtr   rkQ_;
 
   /*
@@ -383,6 +395,8 @@ class SuccinctSelect {
   */
   RankPtr   rk_;
 }; /* SuccinctSelect */
+
+/* } namespace: */
 
 class SuccinctBitVector {
  public:
@@ -398,19 +412,19 @@ class SuccinctBitVector {
       throw "Not initialized yet: bv_";
 
     RankPtr rk(new SuccinctRank(bv_));
-    SelectPtr st0(new SuccinctSelect(bv_, 0, rk));
-    SelectPtr st1(new SuccinctSelect(bv_, 1, rk));
+    SelectPtr st0(new SuccinctSelect(bv_, rk, 0));
+    SelectPtr st1(new SuccinctSelect(bv_, rk, 1));
 
     rk_ = rk, st0_ = st0, st1_ = st1;
   }
 
-  void set_bit(uint8_t bit, uint64_t pos) {
+  void set_bit(uint64_t pos, uint8_t bit) {
     if (pos >= bv_.length())
       throw "Invalid input: pos";
     if (bit > 1)
       throw "Invalid input: bit";
 
-    bv_.set_bit(bit, pos);
+    bv_.set_bit(pos, bit);
   }
 
   bool lookup(uint64_t pos) const {
@@ -421,7 +435,7 @@ class SuccinctBitVector {
   }
 
   /* Rank & Select operations */
-  uint32_t rank(uint32_t pos, uint8_t bit) const {
+  uint64_t rank(uint64_t pos, uint8_t bit) const {
     if (pos >= bv_.length())
       throw "Invalid input: pos";
     if (bit > 1)
@@ -430,16 +444,13 @@ class SuccinctBitVector {
     return rk_->rank(pos, bit);
   }
 
-  uint32_t select(uint32_t pos, uint8_t bit) const {
+  uint64_t select(uint64_t pos, uint8_t bit) const {
     if (pos >= bv_.get_none())
       throw "Invalid input: pos";
     if (bit > 1)
       throw "Invalid input: bit";
 
-    if (bit)
-      return st1_->select(pos);
-    else
-      return st0_->select(pos);
+    return (bit)? st1_->select(pos) : st0_->select(pos);
   }
 
  private:

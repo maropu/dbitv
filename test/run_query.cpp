@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
   for (int i = 0; i < bsz; i++) {
     if (__xor128() < thres) {
       nbits++;
-      bv.set_bit(1, i);
+      bv.set_bit(i, 1);
     }
   }
 
